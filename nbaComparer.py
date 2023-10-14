@@ -111,7 +111,7 @@ def get_season_averages(player_name, season):
     return None
 
 # Example usage
-player_name = input("Enter the name of the player: ")
+player_name = input("Enter the name of the player : ")
 season = input("Enter the season you want for the player's statistics (e.g., '2022-2023'): ")
 
 season_averages = get_season_averages(player_name, season)
