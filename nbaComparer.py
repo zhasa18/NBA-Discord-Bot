@@ -1,133 +1,96 @@
 import requests
 import sqlite3
 
-# Define the API endpoint URLs
-players_url = 'https://www.balldontlie.io/api/v1/players'
-season_averages_url = 'https://www.balldontlie.io/api/v1/season_averages'
+def create_database():
+    connection = sqlite3.connect('nbatrix.db')
+    cursor = connection.cursor()
 
-# Create or connect to the database
-conn = sqlite3.connect('nba_stats.db')
-cursor = conn.cursor()
+    # Create a table
+    cursor.execute('''CREATE TABLE IF NOT EXISTS players
+                      (id INTEGER PRIMARY KEY,
+                       name TEXT,
+                       season INTEGER,
+                       points REAL,
+                       rebounds REAL,
+                       assists REAL,
+                       steals REAL,
+                       blocks REAL)''')
 
-# Create a Players table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS Players (
-        id INTEGER PRIMARY KEY,
-        name TEXT
-    )
-''')
+    connection.commit()
+    connection.close()
 
-# Create a SeasonAverages table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS SeasonAverages (
-        id INTEGER PRIMARY KEY,
-        player_id INTEGER,
-        season TEXT,
-        avg_points REAL,
-        avg_rebounds REAL,
-        avg_assists REAL,
-        total_games INTEGER
-    )
-''')
+create_database()
 
-# Commit changes
-conn.commit()
-
-# Function to get the player's ID by name
-def get_player_id(player_name):
-    # Check if the player is in the database
-    cursor.execute('SELECT id FROM Players WHERE name = ?', (player_name,))
-    player_id = cursor.fetchone()
-
-    if player_id:
-        return player_id[0]
-
-    # If not found in the database, fetch from the API
+def find_player_id(player_name):
+    """
+    Find the player ID based on the player's name.
+    """
+    url = "https://www.balldontlie.io/api/v1/players"
     params = {"search": player_name}
-    response = requests.get(players_url, params=params)
+    response = requests.get(url, params=params)
 
     if response.status_code == 200:
-        player_data = response.json()
-        if player_data["data"]:
-            # Insert the player name into the database
-            cursor.execute('INSERT INTO Players (name) VALUES (?)', (player_name,))
-            conn.commit()
-            return player_data["data"][0]["id"]
-
+        players = response.json()['data']
+        for player in players:
+            if player_name.lower() in (player['first_name'].lower() + " " + player['last_name'].lower()):
+                return player['id']
     return None
 
-# Function to get the season averages for a specific player and season
+
+
 def get_season_averages(player_name, season):
-    player_id = get_player_id(player_name)
+    connection = sqlite3.connect('nbatrix.db')
+    cursor = connection.cursor()
 
-    # Check the database for season averages
-    cursor.execute('''
-        SELECT avg_points, avg_rebounds, avg_assists, total_games
-        FROM SeasonAverages
-        WHERE player_id = ? AND season = ?
-    ''', (player_id, season))
-    
-    season_averages = cursor.fetchone()
-    
-    if season_averages:
-        return {
-            "average_points": season_averages[0],
-            "average_rebounds": season_averages[1],
-            "average_assists": season_averages[2],
-            "total_games": season_averages[3]
-        }
+    # Check if data is already in the database
+    cursor.execute("SELECT * FROM players WHERE name=? AND season=?", (player_name, season))
+    data = cursor.fetchone()
+
+    if data:
+        stats_output = f"Season Averages for {player_name} ({season} Season):\n"
+        stats_output += f"- Points: {data[3]}\n"
+        stats_output += f"- Rebounds: {data[4]}\n"
+        stats_output += f"- Assists: {data[5]}\n"
+        stats_output += f"- Steals: {data[6]}\n"
+        stats_output += f"- Blocks: {data[7]}"
+        connection.close()
+        return stats_output
+
+    # If data not found in database, fetch from API
+    player_id = find_player_id(player_name)
+    if player_id is None:
+        connection.close()
+        return f"No player found with the name {player_name}"
+
+    url = "https://www.balldontlie.io/api/v1/season_averages"
+    params = {"season": season, "player_ids[]": [player_id]}
+    response = requests.get(url, params=params)
+
+    if response.status_code == 200:
+        stats = response.json().get('data', [])
+        if stats:
+            stats = stats[0]
+            stats_output = f"Season Averages for {player_name} ({season} Season):\n"
+            stats_output += f"- Points: {round(stats.get('pts', 0), 1)}\n"
+            stats_output += f"- Rebounds: {round(stats.get('reb', 0), 1)}\n"
+            stats_output += f"- Assists: {round(stats.get('ast', 0), 1)}\n"
+            stats_output += f"- Steals: {round(stats.get('stl', 0), 1)}\n"
+            stats_output += f"- Blocks: {round(stats.get('blk', 0), 1)}"
+
+            # Save data to database
+            cursor.execute("INSERT INTO players (name, season, points, rebounds, assists, steals, blocks) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                           (player_name, season, round(stats.get('pts', 0), 1), round(stats.get('reb', 0), 1), round(stats.get('ast', 0), 1), round(stats.get('stl', 0), 1), round(stats.get('blk', 0), 1)))
+            connection.commit()
+            connection.close()
+            return stats_output
+        else:
+            connection.close()
+            return "No data available for this player and season."
     else:
-        # If not found in the database, fetch from the API
-        params = {
-            "player_ids[]": player_id,
-            "season": season
-        }
+        connection.close()
+        return "Failed to retrieve data from API."
 
-        response = requests.get(season_averages_url, params=params)
-
-        if response.status_code == 200:
-            season_data = response.json()
-            if season_data["data"]:
-                # Insert season averages data into the database
-                avg_points = season_data["data"][0]["pts"]
-                avg_rebounds = season_data["data"][0]["reb"]
-                avg_assists = season_data["data"][0]["ast"]
-                total_games = season_data["data"][0]["games_played"]
-
-                cursor.execute('''
-                    INSERT INTO SeasonAverages (player_id, season, avg_points, avg_rebounds, avg_assists, total_games)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (player_id, season, avg_points, avg_rebounds, avg_assists, total_games))
-
-                conn.commit()
-
-                return {
-                    "average_points": avg_points,
-                    "average_rebounds": avg_rebounds,
-                    "average_assists": avg_assists,
-                    "total_games": total_games
-                }
-
-    return None
-
-# Example usage
-player_name = input("Enter the name of the player: ")
-season = input("Enter the season you want for the player's statistics (e.g., '2022-2023'): ")
-
-season_averages = get_season_averages(player_name, season)
-
-if season_averages:
-    print(f"Player Name: {player_name}")
-    print(f"Season: {season}")
-    print(f"Average Points: {season_averages['average_points']:.1f}")
-    print(f"Average Rebounds: {season_averages['average_rebounds']:.1f}")
-    print(f"Average Assists: {season_averages['average_assists']:.1f}")
-    print(f"Total Games: {season_averages['total_games']}")
-else:
-    print(f"No data found for {player_name} in the {season} season.")
-
-# Close the database connection
-conn.close()
-
-
-
+# # Example usage
+# player_name = "LeBron James"  # Replace with the player's name
+# season = 2018  # Replace with the desired season
+# print(get_season_averages(player_name, season))

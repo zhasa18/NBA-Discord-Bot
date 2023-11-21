@@ -1,53 +1,49 @@
 import discord
-import responses
 import os
 from dotenv import load_dotenv
+# Import the functions from player_data.py
+from nbaComparer import find_player_id, get_season_averages
 
-
-
-
-
-async def send_message(message, user_message, is_private):
+# Function to process and send messages
+async def send_message(channel, user_message):
     try:
-        response = responses.get_response(user_message)
-        await message.author.send(response) if is_private else await message.channel.send(response)
+        # Check if the message is a command for player data
+        if user_message.startswith('!player'):
+            parts = user_message.split()
+            if len(parts) < 3:
+                response = "Usage: !player [player_name] [season]"
+            else:
+                player_name = " ".join(parts[1:-1])
+                season = parts[-1]
+                response = get_season_averages(player_name, season)
+        else:
+            response = "Invalid command."
+
+        await channel.send(response)
     except Exception as e:
         print(e)
 
-
+# Discord bot setup and event handlers
 def run_discord_bot():
     load_dotenv()
     intents = discord.Intents.default()
     intents.message_content = True
     client = discord.Client(intents=intents)
 
-
     @client.event
     async def on_ready():
         print(f'{client.user} has connected to Discord!')
-
-
 
     @client.event
     async def on_message(message):
         if message.author == client.user:
             return
-        
-        username = str(message.author)
-        user_message = str(message.content)
-        channel = str(message.channel)
 
-        print(f'{username} said: "{user_message}" ({channel})')
-
-        if user_message[0] == '?':
-            user_message = user_message[1:] 
-            await send_message(message, user_message, is_private=True)
-        else:
-            await send_message(message, user_message, is_private=False)
+        # Process messages that start with '!'
+        if message.content.startswith('!'):
+            await send_message(message.channel, message.content)
 
     client.run(os.getenv('API_KEY'))
 
-        # if message.content.startswith('!'):
-        #     await send_message(message, message.content[1:], False)
-        # else:
-        #     await send_message(message, message.content, True)
+# Uncomment the line below to run the bot (if running this script directly)
+run_discord_bot()
