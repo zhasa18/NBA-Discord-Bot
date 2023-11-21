@@ -38,3 +38,15 @@ git clone https://github.com/redski18/NBAtrix.git
   ```
 
 4. **Run the Bot**
+
+
+## Usage
+Once NBAtrix is running in your Discord server, you can use the following commands:
+
+- `!player [player_name] [season]`: Retrieves the season averages for the specified player and season. Example: `!player LeBron James 2020`.
+
+## Contributing
+Contributions to NBAtrix are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) for more information on how you can contribute.
+
+## License
+NBAtrix is released under the [MIT License](LICENSE).
